@@ -56,7 +56,8 @@ sub is_running {
         my $bus = Net::DBus->session;
         $bus->get_service('com.Skype.API')->get_object('/com/Skype');
     };
-    return $@ ? 1 : 0;
+    return 0 if $@;
+    return 1;
 }
 
 sub send_command {
