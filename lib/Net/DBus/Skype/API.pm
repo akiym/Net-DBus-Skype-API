@@ -1,10 +1,10 @@
 package Net::DBus::Skype::API;
 use strict;
 use warnings;
+use parent qw/Net::DBus::Object/;
 use 5.008001;
 use Carp ();
 use Net::DBus;
-use Net::DBus::Skype::API::Notify;
 
 our $VERSION = '0.01';
 
@@ -15,34 +15,23 @@ sub new {
     my $name = $args{name}
         || __PACKAGE__ . '/' . $Net::DBus::Skype::API::VERSION;
 
-    my $self = bless {
-        name     => $name,
-        protocol => $args{protocol} || 8,
-        notify   => $args{notify} || sub {},
-        bus      => Net::DBus->session,
-    }, $class;
+    my $bus = Net::DBus->session;
+    my $service = $bus->export_service('com.Skype.API');
+    my $self = $class->SUPER::new($service, '/com/Skype/Client');
+    $self->{name}     = $name;
+    $self->{protocol} = $args{protocol} || 8;
+    $self->{notify}   = $args{notify} || sub {};
 
     Carp::croak("Skype is not running.") unless $self->is_running;
 
-    $self->init;
     $self;
-}
-
-sub init {
-    my $self = shift;
-
-    my $service = $self->{bus}->export_service('com.Skype.API');
-    my $object = Net::DBus::Skype::API::Notify->new(
-        $service,
-        notify => $self->{notify},
-    );
-    $self->{in} = $object;
 }
 
 sub attach {
     my $self = shift;
 
-    my $service = $self->{bus}->get_service('com.Skype.API');
+    my $bus = Net::DBus->session;
+    my $service = $bus->get_service('com.Skype.API');
     my $object = $service->get_object('/com/Skype');
     $self->{out} = $object;
 
@@ -68,6 +57,11 @@ sub send_command {
     $self->{out}->Invoke($command);
 }
 
+sub Notify {
+    my ($self, $notification) = @_;
+    $self->{notify}->($self, $notification);
+}
+
 1;
 __END__
 
@@ -78,14 +72,18 @@ Net::DBus::Skype::API - Skype API for Linux
 =head1 SYNOPSIS
 
     use AnyEvent;
+    use AnyEvent::DBus;
     use Net::DBus::Skype::API;
 
     my $cv = AE::cv;
 
-    my $skype = Net::DBus::Skype::API->new;
+    my $skype = Net::DBus::Skype::API->new(
+        notify => sub {
+            my ($self, $notification) = @_;
+            print $notification;
+        },
+    );
     $skype->attach;
-
-    $skype->send_command('CHAT CREATE echo123');
 
     $cv->recv;
 
