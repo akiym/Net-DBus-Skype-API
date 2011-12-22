@@ -3,8 +3,6 @@ use strict;
 use warnings;
 use 5.008001;
 use Carp ();
-use AnyEvent;
-use AnyEvent::DBus;
 use Net::DBus;
 use Net::DBus::Skype::API::Notify;
 
@@ -20,18 +18,25 @@ sub new {
     my $self = bless {
         name     => $name,
         protocol => $args{protocol} || 7,
-        notify   => sub {},
+        notify   => $args{notify} || sub {},
         bus      => Net::DBus->session,
     }, $class;
 
     Carp::croak("Skype is not running.") unless $self->is_running;
 
+    $self->init;
     $self;
 }
 
-sub notify {
-    my ($self, $code) = @_;
-    $self->{notify} = $code;
+sub init {
+    my $self = shift;
+
+    my $service = $self->{bus}->export_service('com.Skype.API');
+    my $object = Net::DBus::Skype::API::Notify->new(
+        $service,
+        notify => $self->{notify},
+    );
+    $self->{in} = $object;
 }
 
 sub attach {
@@ -45,37 +50,6 @@ sub attach {
     $self->send_command("PROTOCOL $self->{protocol}");
 }
 
-sub _register {
-    my $self = shift;
-
-    my $service = $self->{bus}->export_service('com.Skype.API');
-    my $object = Net::DBus::Skype::API::Notify->new(
-        $service,
-        notify => $self->{notify},
-    );
-    $self->{in} = $object;
-
-    my $connection = $self->{bus}->get_connection('/com/Skype/Client');
-    AnyEvent::DBus->manage($connection);
-}
-
-sub run {
-    my $self = shift;
-    $self->_register;
-
-    $self->{cv} = AE::cv;
-    my $w; $w = AE::signal QUIT => sub {
-        $self->disconnect;
-        undef $w;
-    };
-    $self->{cv}->recv;
-}
-
-sub disconnect {
-    my $self = shift;
-    $self->{cv}->send;
-}
-
 sub is_running {
     my $self = shift;
     eval {
@@ -87,11 +61,9 @@ sub is_running {
 
 sub send_command {
     my ($self, $command) = @_;
-
     unless ($self->{out}) {
         $self->attach;
     }
-
     $self->{out}->Invoke($command);
 }
 
@@ -104,10 +76,17 @@ Net::DBus::Skype::API - Skype API for Linux
 
 =head1 SYNOPSIS
 
+    use AnyEvent;
     use Net::DBus::Skype::API;
 
+    my $cv = AE::cv;
+
     my $skype = Net::DBus::Skype::API->new;
+    $skype->attach;
+
     $skype->send_command('CHAT CREATE echo123');
+
+    $cv->recv;
 
 =head1 DESCRIPTION
 
@@ -131,17 +110,11 @@ If you use spaces in the name, the name is truncated to the space.
 
 By default is 7.
 
+=item notify
+
 =back
 
-=item $skype->notify()
-
-=item $skype->notify(sub { ... })
-
 =item $skype->attach()
-
-=item $skype->run()
-
-=item $skype->disconnect()
 
 =item $skype->is_running()
 
