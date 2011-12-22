@@ -17,7 +17,7 @@ sub new {
 
     my $self = bless {
         name     => $name,
-        protocol => $args{protocol} || 7,
+        protocol => $args{protocol} || 8,
         notify   => $args{notify} || sub {},
         bus      => Net::DBus->session,
     }, $class;
@@ -109,7 +109,7 @@ If you use spaces in the name, the name is truncated to the space.
 
 =item protocol
 
-By default is 7.
+By default is 8.
 
 =item notify
 
